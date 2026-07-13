@@ -72,7 +72,7 @@ class ChatViewModel(
     val isSyncing = mutableStateOf(false)
     val isAiResponding = mutableStateOf(false)
 
-    val currentMessages: Flow<List<ChatMessageEntity>> = currentSessionId.asFlow()
+    val currentMessages: Flow<List<ChatMessageEntity>> = snapshotFlow { currentSessionId.value }
         .flatMapLatest { id ->
             if (id != null) db.chatDao().getMessagesForSession(id) else flowOf(emptyList())
         }
