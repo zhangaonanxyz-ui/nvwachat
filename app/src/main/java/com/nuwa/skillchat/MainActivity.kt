@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import androidx.compose.foundation.text.selection.SelectionContainer
 
 class MainActivity : ComponentActivity() {
     private lateinit var db: AppDatabase
@@ -129,6 +130,13 @@ class ChatViewModel(
         }
     }
 
+    fun clearCurrentSessionMessages() {
+        val sessionId = currentSessionId.value ?: return
+        kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
+            db.chatDao().deleteMessagesForSession(sessionId)
+        }
+    }
+
     fun sendMessage(text: String, apiKey: String, model: String) {
         val sessionId = currentSessionId.value ?: return
         if (text.isBlank() || isAiResponding.value) return
@@ -154,19 +162,31 @@ class ChatViewModel(
                 ChatMessageEntity(sessionId = sessionId, role = "assistant", content = "")
             )
 
-            // Pass apiKey and model dynamically
-            openRouterClient.sendChatRequestStream(apiMessages, apiKey, model).collect { chunk ->
-                aiResponseBuffer += chunk
+            try {
+                // Pass apiKey and model dynamically
+                openRouterClient.sendChatRequestStream(apiMessages, apiKey, model).collect { chunk ->
+                    aiResponseBuffer += chunk
+                    db.chatDao().insertMessage(
+                        ChatMessageEntity(
+                            id = aiMessagePlaceholderId,
+                            sessionId = sessionId,
+                            role = "assistant",
+                            content = aiResponseBuffer
+                        )
+                    )
+                }
+            } catch (e: Exception) {
                 db.chatDao().insertMessage(
                     ChatMessageEntity(
                         id = aiMessagePlaceholderId,
                         sessionId = sessionId,
                         role = "assistant",
-                        content = aiResponseBuffer
+                        content = "API连接失败，请检查网络或设置: ${e.localizedMessage}"
                     )
                 )
+            } finally {
+                isAiResponding.value = false
             }
-            isAiResponding.value = false
         }
     }
 }
@@ -298,6 +318,11 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
                         }
                     },
                     actions = {
+                        if (viewModel.currentSessionId.value != null) {
+                            IconButton(onClick = { viewModel.clearCurrentSessionMessages() }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Clear Chat", tint = Color.LightGray)
+                            }
+                        }
                         IconButton(onClick = { showSettingsDialog = true }) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings")
                         }
@@ -393,11 +418,13 @@ fun ChatBubble(message: ChatMessageEntity) {
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.widthIn(max = 280.dp)
         ) {
-            Text(
-                text = message.content,
-                modifier = Modifier.padding(12.dp),
-                style = MaterialTheme.typography.bodyMedium
-            )
+            SelectionContainer {
+                Text(
+                    text = message.content,
+                    modifier = Modifier.padding(12.dp),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
         }
     }
 }
