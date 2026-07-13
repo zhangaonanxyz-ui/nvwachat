@@ -58,7 +58,7 @@ interface ChatDao {
     fun getMessagesForSession(sessionId: Long): Flow<List<ChatMessageEntity>>
 
     @Insert
-    suspend fun insertMessage(message: ChatMessageEntity)
+    suspend fun insertMessage(message: ChatMessageEntity): Long
 
     @Query("DELETE FROM chat_messages WHERE sessionId = :sessionId")
     suspend fun deleteMessagesForSession(sessionId: Long)
