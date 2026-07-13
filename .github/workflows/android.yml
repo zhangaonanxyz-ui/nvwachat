@@ -1,0 +1,42 @@
+name: Android CI Build APK
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant Execute Permission to Gradlew
+      # If gradlew wrapper doesn't exist, we will use general Gradle setup
+      run: |
+        if [ -f gradlew ]; then
+          chmod +x gradlew
+        fi
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+
+    - name: Build Debug APK
+      # Since we did not commit gradlew, setup-gradle will let us run "gradle assembleDebug" directly
+      run: gradle assembleDebug
+
+    - name: Upload Output APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuwa-skill-chat-debug-apk
+        path: app/build/outputs/apk/debug/app-debug.apk
