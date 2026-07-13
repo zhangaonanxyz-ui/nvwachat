@@ -72,6 +72,7 @@ class ChatViewModel(
     val currentSessionId = mutableStateOf<Long?>(null)
     val isSyncing = mutableStateOf(false)
     val isAiResponding = mutableStateOf(false)
+    val streamingMessage = mutableStateOf("")
 
     val currentMessages: Flow<List<ChatMessageEntity>> = snapshotFlow { currentSessionId.value }
         .flatMapLatest { id ->
@@ -156,19 +157,20 @@ class ChatViewModel(
             }
 
             isAiResponding.value = true
+            streamingMessage.value = "" // Reset streaming buffer
             var aiResponseBuffer = ""
             
-            val aiMessagePlaceholderId = db.chatDao().insertMessage(
-                ChatMessageEntity(sessionId = sessionId, role = "assistant", content = "")
-            )
-
             try {
-                // Pass apiKey and model dynamically
+                // Pass apiKey and model dynamically - Only update memory state for 60fps rendering
                 openRouterClient.sendChatRequestStream(apiMessages, apiKey, model).collect { chunk ->
                     aiResponseBuffer += chunk
+                    streamingMessage.value = aiResponseBuffer
+                }
+                
+                // Stream finished successfully -> Write to Room DB exactly ONCE
+                if (aiResponseBuffer.isNotEmpty()) {
                     db.chatDao().insertMessage(
                         ChatMessageEntity(
-                            id = aiMessagePlaceholderId,
                             sessionId = sessionId,
                             role = "assistant",
                             content = aiResponseBuffer
@@ -176,9 +178,9 @@ class ChatViewModel(
                     )
                 }
             } catch (e: Exception) {
+                // Save error message to DB exactly ONCE
                 db.chatDao().insertMessage(
                     ChatMessageEntity(
-                        id = aiMessagePlaceholderId,
                         sessionId = sessionId,
                         role = "assistant",
                         content = "API连接失败，请检查网络或设置: ${e.localizedMessage}"
@@ -186,6 +188,7 @@ class ChatViewModel(
                 )
             } finally {
                 isAiResponding.value = false
+                streamingMessage.value = "" // Reset buffer after saving
             }
         }
     }
@@ -366,6 +369,18 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
                     ) {
                         items(messagesState.value.filter { it.role != "system" }) { message ->
                             ChatBubble(message)
+                        }
+                        // Render temporary live streaming content in UI from memory without DB writes
+                        if (viewModel.isAiResponding.value && viewModel.streamingMessage.value.isNotEmpty()) {
+                            item {
+                                ChatBubble(
+                                    ChatMessageEntity(
+                                        sessionId = viewModel.currentSessionId.value ?: 0,
+                                        role = "assistant",
+                                        content = viewModel.streamingMessage.value
+                                    )
+                                )
+                            }
                         }
                     }
                 }

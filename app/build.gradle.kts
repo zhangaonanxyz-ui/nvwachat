@@ -8,12 +8,27 @@ android {
     namespace = "com.nuwa.skillchat"
     compileSdk = 34
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("nuwa_keystore.jks")
+            storePassword = "123456"
+            keyAlias = "nuwa_alias"
+            keyPassword = "123456"
+        }
+        getByName("debug") {
+            storeFile = file("nuwa_keystore.jks")
+            storePassword = "123456"
+            keyAlias = "nuwa_alias"
+            keyPassword = "123456"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.nuwa.skillchat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -23,10 +38,14 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

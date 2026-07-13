@@ -48,7 +48,7 @@ interface ChatDao {
     @Query("SELECT * FROM chat_sessions ORDER BY createdAt DESC")
     fun getAllSessionsFlow(): Flow<List<ChatSessionEntity>>
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun createSession(session: ChatSessionEntity): Long
 
     @Query("DELETE FROM chat_sessions WHERE id = :sessionId")
@@ -57,7 +57,7 @@ interface ChatDao {
     @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY timestamp ASC")
     fun getMessagesForSession(sessionId: Long): Flow<List<ChatMessageEntity>>
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: ChatMessageEntity): Long
 
     @Query("DELETE FROM chat_messages WHERE sessionId = :sessionId")
