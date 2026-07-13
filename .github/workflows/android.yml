@@ -30,9 +30,11 @@ jobs:
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: 8.4
 
     - name: Build Debug APK
-      # Since we did not commit gradlew, setup-gradle will let us run "gradle assembleDebug" directly
+      # Use the configured gradle version
       run: gradle assembleDebug
 
     - name: Upload Output APK Artifact
