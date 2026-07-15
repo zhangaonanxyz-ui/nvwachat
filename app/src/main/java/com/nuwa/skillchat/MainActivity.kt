@@ -2,39 +2,52 @@ package com.nuwa.skillchat
 
 import android.content.Context
 import android.os.Bundle
+import android.view.View
+import android.view.Window
+import android.view.WindowManager
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.room.Room
 import com.nuwa.skillchat.db.*
 import com.nuwa.skillchat.network.*
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import kotlinx.coroutines.Dispatchers
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
+import io.noties.markwon.ext.tables.TableTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+
+// ═══════════════════════════════════════════════════════════════════
+//  MainActivity — System bars + Compose entry
+// ═══════════════════════════════════════════════════════════════════
 
 class MainActivity : ComponentActivity() {
     private lateinit var db: AppDatabase
@@ -43,27 +56,31 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
+        // Make status bar transparent for edge-to-edge Apple aesthetic
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.BLACK
+
         db = Room.databaseBuilder(
             applicationContext,
             AppDatabase::class.java, "nuwa-chat-db"
         ).build()
 
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            AppleDarkTheme {
                 val chatViewModel: ChatViewModel = viewModel {
                     ChatViewModel(db, giteeService, openRouterClient)
                 }
-                
-                LaunchedEffect(Unit) {
-                    chatViewModel.syncSkillsFromGitee()
-                }
-
+                LaunchedEffect(Unit) { chatViewModel.syncSkillsFromGitee() }
                 ChatAppScreen(chatViewModel)
             }
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  ChatViewModel — All state + business logic
+// ═══════════════════════════════════════════════════════════════════
 
 class ChatViewModel(
     private val db: AppDatabase,
@@ -73,7 +90,7 @@ class ChatViewModel(
 
     val skills: Flow<List<SkillEntity>> = db.skillDao().getAllSkillsFlow()
     val sessions: Flow<List<ChatSessionEntity>> = db.chatDao().getAllSessionsFlow()
-    
+
     val currentSessionId = mutableStateOf<Long?>(null)
     val isSyncing = mutableStateOf(false)
     val isAiResponding = mutableStateOf(false)
@@ -90,37 +107,30 @@ class ChatViewModel(
             try {
                 val onlineSkills = giteeService.fetchSkillsList()
                 val activeIds = onlineSkills.map { it.name }
-                
                 db.skillDao().deleteOldSkills(activeIds)
-                
                 onlineSkills.forEach { skill ->
                     val promptText = giteeService.fetchSkillPrompt(skill.path)
                     if (promptText != null) {
                         db.skillDao().insertSkill(
                             SkillEntity(
                                 id = skill.name,
-                                name = skill.name.replace(".md", "").replace("-perspective", "").replace("-", " ").capitalize(),
+                                name = skill.name.replace(".md", "").replace("-perspective", "")
+                                    .replace("-", " ").capitalize(),
                                 prompt = promptText,
                                 lastUpdated = System.currentTimeMillis()
                             )
                         )
                     }
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                isSyncing.value = false
-            }
+            } catch (e: Exception) { e.printStackTrace() }
+            finally { isSyncing.value = false }
         }
     }
 
     fun startNewSession(skill: SkillEntity) {
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
             val sessionId = db.chatDao().createSession(
-                ChatSessionEntity(
-                    title = "\u5bf9\u8bdd: ${skill.name}",
-                    skillId = skill.id
-                )
+                ChatSessionEntity(title = "\u65b0\u5bf9\u8bdd", skillId = skill.id)
             )
             currentSessionId.value = sessionId
         }
@@ -130,16 +140,14 @@ class ChatViewModel(
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
             db.chatDao().deleteMessagesForSession(sessionId)
             db.chatDao().deleteSession(sessionId)
-            if (currentSessionId.value == sessionId) {
-                currentSessionId.value = null
-            }
+            if (currentSessionId.value == sessionId) currentSessionId.value = null
         }
     }
 
     fun clearCurrentSessionMessages() {
-        val sessionId = currentSessionId.value ?: return
+        val sid = currentSessionId.value ?: return
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
-            db.chatDao().deleteMessagesForSession(sessionId)
+            db.chatDao().deleteMessagesForSession(sid)
         }
     }
 
@@ -148,59 +156,49 @@ class ChatViewModel(
         if (text.isBlank() || isAiResponding.value) return
 
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
-            db.chatDao().insertMessage(ChatMessageEntity(sessionId = sessionId, role = "user", content = text))
-            
-            val session = db.chatDao().getAllSessionsFlow().first().firstOrNull { it.id == sessionId } ?: return@launch
+            db.chatDao().insertMessage(
+                ChatMessageEntity(sessionId = sessionId, role = "user", content = text)
+            )
+
+            val session = db.chatDao().getAllSessionsFlow().first()
+                .firstOrNull { it.id == sessionId } ?: return@launch
             val skill = db.skillDao().getSkillById(session.skillId) ?: return@launch
-            
+
             val dbMessages = db.chatDao().getMessagesForSession(sessionId).first()
             val apiMessages = mutableListOf<OpenRouterClient.Message>()
-            
             apiMessages.add(OpenRouterClient.Message("system", skill.prompt))
-            dbMessages.forEach { msg ->
-                apiMessages.add(OpenRouterClient.Message(msg.role, msg.content))
-            }
+            dbMessages.forEach { apiMessages.add(OpenRouterClient.Message(it.role, it.content)) }
 
             isAiResponding.value = true
             streamingMessage.value = ""
-            var aiResponseBuffer = ""
-            
+            var buffer = ""
+
             try {
                 openRouterClient.sendChatRequestStream(apiMessages, apiKey, model).collect { chunk ->
-                    aiResponseBuffer += chunk
-                    streamingMessage.value = aiResponseBuffer
+                    buffer += chunk
+                    streamingMessage.value = buffer
                 }
-                
-                // Stream finished -> Write to DB once
-                if (aiResponseBuffer.isNotEmpty()) {
+
+                if (buffer.isNotEmpty()) {
                     db.chatDao().insertMessage(
-                        ChatMessageEntity(
-                            sessionId = sessionId,
-                            role = "assistant",
-                            content = aiResponseBuffer
-                        )
+                        ChatMessageEntity(sessionId = sessionId, role = "assistant", content = buffer)
                     )
                 }
 
-                // Auto-summarize session title after first AI reply
-                val allMessages = db.chatDao().getMessagesForSession(sessionId).first()
-                val nonSystemMessages = allMessages.filter { it.role != "system" }
-                if (nonSystemMessages.size <= 2) {
+                // Auto-summarize title after 3 full rounds (3 user + 3 AI = 6 non-system messages)
+                val all = db.chatDao().getMessagesForSession(sessionId).first()
+                val nonSystem = all.filter { it.role != "system" }
+                if (nonSystem.size <= 6) {
                     try {
-                        val summaryMessages = nonSystemMessages.map {
-                            OpenRouterClient.Message(it.role, it.content)
-                        }
-                        val summary = openRouterClient.sendSummarizeRequest(summaryMessages, apiKey)
-                        if (!summary.isNullOrBlank()) {
-                            db.chatDao().updateSessionTitle(sessionId, summary)
-                        }
-                    } catch (_: Exception) { /* Silent fallback */ }
+                        val summaryMsgs = nonSystem.map { OpenRouterClient.Message(it.role, it.content) }
+                        val summary = openRouterClient.sendSummarizeRequest(summaryMsgs, apiKey)
+                        if (!summary.isNullOrBlank()) db.chatDao().updateSessionTitle(sessionId, summary)
+                    } catch (_: Exception) { /* silent fallback */ }
                 }
             } catch (e: Exception) {
                 db.chatDao().insertMessage(
                     ChatMessageEntity(
-                        sessionId = sessionId,
-                        role = "assistant",
+                        sessionId = sessionId, role = "assistant",
                         content = "API\u8fde\u63a5\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u6216\u8bbe\u7f6e: ${e.localizedMessage}"
                     )
                 )
@@ -212,226 +210,329 @@ class ChatViewModel(
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  Apple Dark Theme — Pure OLED black, SF Pro typography, restrained blue
+// ═══════════════════════════════════════════════════════════════════
+
+private val AppleBlue      = Color(0xFF0A84FF)
+private val AppleGreen     = Color(0xFF30D158)
+private val AppleRed       = Color(0xFFFF453A)
+private val AppleSurface   = Color(0xFF1C1C1E)
+private val AppleCard      = Color(0xFF2C2C2E)
+private val AppleBg        = Color(0xFF000000)
+private val AppleText1     = Color(0xFFFFFFFF)
+private val AppleText2     = Color(0xFFEBEBF5)
+private val AppleText3     = Color(0xFF98989F)
+private val AppleDivider   = Color(0xFF38383A)
+
+@Composable
+fun AppleDarkTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            primary = AppleBlue,
+            onPrimary = Color.White,
+            primaryContainer = AppleBlue,
+            onPrimaryContainer = Color.White,
+            secondary = AppleCard,
+            onSecondary = AppleText2,
+            secondaryContainer = AppleCard,
+            onSecondaryContainer = AppleText1,
+            background = AppleBg,
+            onBackground = AppleText1,
+            surface = AppleSurface,
+            onSurface = AppleText1,
+            surfaceVariant = AppleCard,
+            onSurfaceVariant = AppleText2,
+            outline = AppleDivider,
+            error = AppleRed
+        ),
+        typography = Typography(
+            displayLarge  = androidx.compose.ui.text.TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
+            titleLarge    = androidx.compose.ui.text.TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp),
+            titleMedium   = androidx.compose.ui.text.TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp),
+            bodyLarge     = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal, letterSpacing = 0.sp, lineHeight = 22.sp),
+            bodyMedium    = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Normal, letterSpacing = 0.sp, lineHeight = 21.sp),
+            labelLarge    = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
+            labelSmall    = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium,  letterSpacing = 0.sp)
+        ),
+        content = content
+    )
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Main Screen — Drawer + Scaffold + TopBar + Input
+// ═══════════════════════════════════════════════════════════════════
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatAppScreen(viewModel: ChatViewModel) {
     val context = LocalContext.current
-    val sharedPrefs = remember { context.getSharedPreferences("nuwa_chat_prefs", Context.MODE_PRIVATE) }
-    
-    var savedApiKey by remember { mutableStateOf(sharedPrefs.getString("openrouter_api_key", "") ?: "") }
-    var savedModel by remember { mutableStateOf(sharedPrefs.getString("openrouter_model", "deepseek/deepseek-v4-pro") ?: "") }
+    val prefs = remember { context.getSharedPreferences("nuwa_chat_prefs", Context.MODE_PRIVATE) }
 
-    var showSettingsDialog by remember { mutableStateOf(false) }
+    var apiKey  by remember { mutableStateOf(prefs.getString("openrouter_api_key", "") ?: "") }
+    var model   by remember { mutableStateOf(prefs.getString("openrouter_model", "deepseek/deepseek-v4-pro") ?: "") }
+    var showSettings by remember { mutableStateOf(false) }
 
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    
-    val skillsState = viewModel.skills.collectAsState(initial = emptyList())
-    val sessionsState = viewModel.sessions.collectAsState(initial = emptyList())
-    val messagesState = viewModel.currentMessages.collectAsState(initial = emptyList())
-    
-    var textInput by remember { mutableStateOf("") }
 
-    // Settings Dialog
-    if (showSettingsDialog) {
-        var tempKey by remember { mutableStateOf(savedApiKey) }
-        var tempModel by remember { mutableStateOf(savedModel) }
+    val skillsState    = viewModel.skills.collectAsState(initial = emptyList())
+    val sessionsState  = viewModel.sessions.collectAsState(initial = emptyList())
+    val messagesState  = viewModel.currentMessages.collectAsState(initial = emptyList())
+    var textInput      by remember { mutableStateOf("") }
+
+    // ─── Settings Dialog (Apple sheet style) ───────────────────────
+    if (showSettings) {
+        var tmpKey   by remember { mutableStateOf(apiKey) }
+        var tmpModel by remember { mutableStateOf(model) }
 
         AlertDialog(
-            onDismissRequest = { showSettingsDialog = false },
-            title = { Text("API \u914d\u7f6e") },
+            onDismissRequest = { showSettings = false },
+            containerColor = AppleCard,
+            titleContentColor = AppleText1,
+            textContentColor = AppleText3,
+            title = { Text("\u8bbe\u7f6e", style = MaterialTheme.typography.titleLarge) },
             text = {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
-                        value = tempKey,
-                        onValueChange = { tempKey = it },
-                        label = { Text("OpenRouter API Key") },
-                        modifier = Modifier.fillMaxWidth()
+                        value = tmpKey, onValueChange = { tmpKey = it },
+                        label = { Text("OpenRouter API Key", color = AppleText3) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = AppleText1, unfocusedTextColor = AppleText2,
+                            focusedBorderColor = AppleBlue, unfocusedBorderColor = AppleDivider,
+                            cursorColor = AppleBlue
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = tempModel,
-                        onValueChange = { tempModel = it },
-                        label = { Text("\u5927\u6a21\u578b\u540d\u79f0") },
-                        modifier = Modifier.fillMaxWidth()
+                        value = tmpModel, onValueChange = { tmpModel = it },
+                        label = { Text("\u6a21\u578b", color = AppleText3) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = AppleText1, unfocusedTextColor = AppleText2,
+                            focusedBorderColor = AppleBlue, unfocusedBorderColor = AppleDivider,
+                            cursorColor = AppleBlue
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
                     )
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    savedApiKey = tempKey
-                    savedModel = tempModel
-                    sharedPrefs.edit().apply {
-                        putString("openrouter_api_key", tempKey)
-                        putString("openrouter_model", tempModel)
-                        apply()
-                    }
-                    showSettingsDialog = false
-                }) {
-                    Text("\u4fdd\u5b58")
-                }
+                Button(
+                    onClick = {
+                        apiKey = tmpKey; model = tmpModel
+                        prefs.edit().putString("openrouter_api_key", tmpKey)
+                            .putString("openrouter_model", tmpModel).apply()
+                        showSettings = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
+                    enabled = tmpKey.isNotBlank() && tmpModel.isNotBlank(),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("\u4fdd\u5b58") }
             },
             dismissButton = {
-                TextButton(onClick = { showSettingsDialog = false }) {
-                    Text("\u53d6\u6d88")
-                }
+                TextButton(onClick = { showSettings = false }) { Text("\u53d6\u6d88", color = AppleBlue) }
             }
         )
     }
 
+    // ─── Navigation Drawer ──────────────────────────────────────────
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet {
-                Text("\u4f1a\u8bdd\u7ba1\u7406", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
-                Divider()
-                
+            ModalDrawerSheet(
+                drawerContainerColor = AppleSurface,
+                drawerContentColor = AppleText1
+            ) {
+                // Header
+                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+                    Text("\u5973\u5a32", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = AppleBlue)
+                    Spacer(Modifier.height(2.dp))
+                    Text("Skill \u667a\u80fd\u5bf9\u8bdd", fontSize = 13.sp, color = AppleText3)
+                }
+                HorizontalDivider(color = AppleDivider)
+
+                // Sessions
+                Text("\u5386\u53f2\u5bf9\u8bdd", fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                    color = AppleText3, modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 4.dp))
                 LazyColumn(modifier = Modifier.weight(1f)) {
                     items(sessionsState.value) { session ->
+                        val selected = viewModel.currentSessionId.value == session.id
                         NavigationDrawerItem(
-                            label = { Text(session.title) },
-                            selected = viewModel.currentSessionId.value == session.id,
-                            onClick = {
-                                viewModel.currentSessionId.value = session.id
-                                scope.launch { drawerState.close() }
-                            },
+                            label = { Text(session.title, fontSize = 15.sp, maxLines = 1, color = if (selected) AppleBlue else AppleText1) },
+                            selected = selected,
+                            onClick = { viewModel.currentSessionId.value = session.id; scope.launch { drawerState.close() } },
                             badge = {
-                                IconButton(onClick = { viewModel.deleteSession(session.id) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
+                                IconButton(onClick = { viewModel.deleteSession(session.id) }, modifier = Modifier.size(28.dp)) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = AppleText3, modifier = Modifier.size(16.dp))
                                 }
                             },
-                            modifier = Modifier.padding(8.dp)
+                            colors = NavigationDrawerItemDefaults.colors(
+                                selectedContainerColor = AppleCard,
+                                unselectedContainerColor = Color.Transparent
+                            ),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
                         )
                     }
                 }
-                
-                Divider()
-                Text("\u9009\u62e9 Skill \u5f00\u59cb\u5bf9\u8bdd", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
-                
-                LazyColumn(modifier = Modifier.height(200.dp)) {
+
+                HorizontalDivider(color = AppleDivider)
+
+                // Skills
+                Text("\u9009\u62e9 Skill", fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                    color = AppleText3, modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 4.dp))
+                LazyColumn(modifier = Modifier.height(220.dp)) {
                     items(skillsState.value) { skill ->
                         NavigationDrawerItem(
-                            label = { Text(skill.name) },
+                            label = { Text(skill.name, fontSize = 15.sp, color = AppleText1) },
                             selected = false,
-                            onClick = {
-                                viewModel.startNewSession(skill)
-                                scope.launch { drawerState.close() }
-                            },
-                            icon = { Icon(Icons.Default.Add, contentDescription = "Add") },
-                            modifier = Modifier.padding(8.dp)
+                            onClick = { viewModel.startNewSession(skill); scope.launch { drawerState.close() } },
+                            icon = { Icon(Icons.Default.Add, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(18.dp)) },
+                            colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
                         )
                     }
                 }
+                Spacer(Modifier.height(16.dp))
             }
         }
     ) {
         Scaffold(
+            containerColor = AppleBg,
             topBar = {
-                TopAppBar(
-                    title = { 
-                        val currentSession = sessionsState.value.find { it.id == viewModel.currentSessionId.value }
-                        Text(currentSession?.title ?: "\u5973\u5a32 \u00b7 Skill \u667a\u80fd\u5bf9\u8bdd") 
+                CenterAlignedTopAppBar(
+                    title = {
+                        val current = sessionsState.value.find { it.id == viewModel.currentSessionId.value }
+                        Text(
+                            current?.title ?: "\u5973\u5a32",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = AppleText1
+                        )
                     },
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menu")
+                            Icon(Icons.Default.Menu, contentDescription = "Menu", tint = AppleBlue)
                         }
                     },
                     actions = {
                         if (viewModel.currentSessionId.value != null) {
                             IconButton(onClick = { viewModel.clearCurrentSessionMessages() }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Clear Chat", tint = Color.LightGray)
+                                Icon(Icons.Default.Delete, contentDescription = "Clear", tint = AppleText3)
                             }
                         }
-                        IconButton(onClick = { showSettingsDialog = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        IconButton(onClick = { showSettings = true }) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = AppleBlue)
                         }
-                    }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = AppleText1
+                    )
                 )
             }
-        ) { paddingValues ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                if (savedApiKey.isBlank()) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+        ) { padding ->
+            Column(modifier = Modifier.fillMaxSize().padding(padding).background(AppleBg)) {
+
+                // ── Empty states ──
+                if (apiKey.isBlank()) {
+                    Box(Modifier.weight(1f).fillMaxWidth(), Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("\u8bf7\u5148\u70b9\u51fb\u53f3\u4e0a\u89d2\u8bbe\u7f6e\u56fe\u6807\u914d\u7f6e\u4f60\u7684 OpenRouter API Key", style = MaterialTheme.typography.bodyLarge)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { showSettingsDialog = true }) {
-                                Text("\u7acb\u5373\u914d\u7f6e")
-                            }
+                            Text("\u5973\u5a32", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = AppleBlue)
+                            Spacer(Modifier.height(8.dp))
+                            Text("\u8bf7\u5148\u914d\u7f6e API Key", color = AppleText3)
+                            Spacer(Modifier.height(20.dp))
+                            Button(onClick = { showSettings = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
+                                shape = RoundedCornerShape(20.dp)) { Text("\u5f00\u59cb\u914d\u7f6e") }
                         }
                     }
                 } else if (viewModel.currentSessionId.value == null) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text("\u70b9\u51fb\u5de6\u4e0a\u89d2\u83dc\u5355\uff0c\u9009\u62e9\u4e00\u4e2a Skill \u5f00\u59cb\u804a\u5929", style = MaterialTheme.typography.bodyLarge)
+                    Box(Modifier.weight(1f).fillMaxWidth(), Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("\u5973\u5a32", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = AppleBlue)
+                            Spacer(Modifier.height(12.dp))
+                            Text("\u6253\u5f00\u83dc\u5355\uff0c\u9009\u62e9\u4e00\u4e2a Skill \u5f00\u59cb", color = AppleText3, fontSize = 15.sp)
+                        }
                     }
                 } else {
-                    // Chat message list with auto-scroll
+                    // ── Chat messages ──
                     val listState = rememberLazyListState()
-                    val messages = messagesState.value.filter { it.role != "system" }
-                    val isStreaming = viewModel.isAiResponding.value && viewModel.streamingMessage.value.isNotEmpty()
-                    val totalItems = messages.size + (if (isStreaming) 1 else 0)
+                    val msgs = messagesState.value.filter { it.role != "system" }
+                    val streaming = viewModel.isAiResponding.value && viewModel.streamingMessage.value.isNotEmpty()
+                    val total = msgs.size + (if (streaming) 1 else 0)
 
-                    // Auto-scroll to bottom on new messages or streaming updates
-                    LaunchedEffect(messages.size, viewModel.streamingMessage.value) {
-                        if (totalItems > 0) {
-                            listState.animateScrollToItem(totalItems - 1)
-                        }
+                    LaunchedEffect(msgs.size, viewModel.streamingMessage.value) {
+                        if (total > 0) listState.animateScrollToItem(total - 1)
                     }
 
                     LazyColumn(
                         state = listState,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                         reverseLayout = false
                     ) {
-                        items(messages) { message ->
-                            ChatBubble(message)
-                        }
-                        // Streaming message bubble
-                        if (isStreaming) {
+                        items(msgs) { message -> ChatBubble(message) }
+                        if (streaming) {
                             item {
-                                ChatBubble(
-                                    ChatMessageEntity(
-                                        sessionId = viewModel.currentSessionId.value ?: 0,
-                                        role = "assistant",
-                                        content = viewModel.streamingMessage.value
-                                    )
-                                )
+                                ChatBubble(ChatMessageEntity(
+                                    sessionId = viewModel.currentSessionId.value ?: 0,
+                                    role = "assistant",
+                                    content = viewModel.streamingMessage.value
+                                ))
                             }
                         }
                     }
                 }
 
-                if (viewModel.currentSessionId.value != null && savedApiKey.isNotBlank()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                // ── Input bar ──
+                if (viewModel.currentSessionId.value != null && apiKey.isNotBlank()) {
+                    Surface(
+                        color = AppleSurface,
+                        shadowElevation = 8.dp,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        TextField(
-                            value = textInput,
-                            onValueChange = { textInput = it },
-                            modifier = Modifier.weight(1f),
-                            placeholder = { Text("\u5411 AI \u63d0\u95ee...") },
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                viewModel.sendMessage(textInput, savedApiKey, savedModel)
-                                textInput = ""
-                            },
-                            enabled = !viewModel.isAiResponding.value
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("\u53d1\u9001")
+                            TextField(
+                                value = textInput,
+                                onValueChange = { textInput = it },
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text("\u6d88\u606f", color = AppleText3) },
+                                colors = TextFieldDefaults.colors(
+                                    focusedTextColor = AppleText1,
+                                    unfocusedTextColor = AppleText2,
+                                    focusedContainerColor = AppleCard,
+                                    unfocusedContainerColor = AppleCard,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    cursorColor = AppleBlue
+                                ),
+                                shape = RoundedCornerShape(20.dp),
+                                maxLines = 4
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    viewModel.sendMessage(textInput, apiKey, model)
+                                    textInput = ""
+                                },
+                                enabled = !viewModel.isAiResponding.value && textInput.isNotBlank(),
+                                shape = CircleShape,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AppleBlue,
+                                    disabledContainerColor = AppleCard
+                                ),
+                                modifier = Modifier.size(40.dp),
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Icon(Icons.Default.Send, contentDescription = "Send",
+                                    tint = if (viewModel.isAiResponding.value || textInput.isBlank()) AppleText3 else Color.White,
+                                    modifier = Modifier.size(18.dp))
+                            }
                         }
                     }
                 }
@@ -440,51 +541,67 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  Chat Bubble — iMessage-style, gradient, selectable
+// ═══════════════════════════════════════════════════════════════════
+
 @Composable
 fun ChatBubble(message: ChatMessageEntity) {
     val isUser = message.role == "user"
-    val alignment = if (isUser) Alignment.End else Alignment.Start
-    val bgColor = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
-    val textColor = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalAlignment = alignment
+        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
     ) {
-        Surface(
-            color = bgColor,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.widthIn(max = 320.dp)
-        ) {
-            if (isUser) {
-                // User messages: plain text, selectable
-                AndroidView(
-                    modifier = Modifier.padding(12.dp),
-                    factory = { ctx ->
-                        TextView(ctx).apply {
-                            setTextIsSelectable(true)
-                            setTextColor(textColor.toArgb())
-                            textSize = 15f
-                        }
-                    },
-                    update = { tv ->
-                        tv.text = message.content
-                        tv.setTextColor(textColor.toArgb())
-                    }
-                )
-            } else {
-                // AI messages: Markwon rendered Markdown
+        if (isUser) {
+            // User bubble — blue gradient (iMessage right)
+            Surface(
+                shape = RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp),
+                modifier = Modifier.widthIn(max = 280.dp),
+                color = Color.Transparent
+            ) {
+                Box(
+                    modifier = Modifier
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(Color(0xFF0A84FF), Color(0xFF0066CC))
+                            ),
+                            shape = RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)
+                        )
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    AndroidView(
+                        factory = { ctx ->
+                            TextView(ctx).apply {
+                                setTextIsSelectable(true)
+                                setTextColor(Color.White.toArgb())
+                                textSize = 15f
+                            }
+                        },
+                        update = { tv -> tv.text = message.content; tv.setTextColor(Color.White.toArgb()) }
+                    )
+                }
+            }
+        } else {
+            // AI bubble — dark card (iMessage left)
+            Surface(
+                shape = RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp),
+                color = AppleCard,
+                modifier = Modifier.widthIn(max = 300.dp)
+            ) {
                 MarkdownContent(
                     content = message.content,
-                    textColor = textColor,
-                    modifier = Modifier.padding(12.dp)
+                    textColor = AppleText2,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                 )
             }
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  Markdown Renderer — Dark-theme aware, dark code blocks
+// ═══════════════════════════════════════════════════════════════════
 
 @Composable
 fun MarkdownContent(content: String, textColor: Color, modifier: Modifier = Modifier) {
@@ -497,15 +614,22 @@ fun MarkdownContent(content: String, textColor: Color, modifier: Modifier = Modi
                 setTextIsSelectable(true)
                 textSize = 15f
                 setTextColor(textColor.toArgb())
-                setLinkTextColor(android.graphics.Color.parseColor("#64B5F6"))
+                setLinkTextColor(AppleBlue.toArgb())
+                highlightColor = AppleBlue.copy(alpha = 0.3f).toArgb()
             }
         },
         update = { textView ->
             textView.setTextColor(textColor.toArgb())
             try {
+                // Dark-themed table style
+                val tableTheme = TableTheme.Builder()
+                    .textColor(AppleText2.toArgb())
+                    .borderColor(AppleDivider.toArgb())
+                    .build()
+
                 val markwon = Markwon.builder(context)
                     .usePlugin(StrikethroughPlugin.create())
-                    .usePlugin(TablePlugin.create(context))
+                    .usePlugin(TablePlugin.create(context, tableTheme))
                     .build()
                 markwon.setMarkdown(textView, content)
             } catch (e: Exception) {
