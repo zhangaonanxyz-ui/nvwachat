@@ -23,6 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -41,6 +42,7 @@ import io.noties.markwon.Markwon
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -189,9 +191,25 @@ class ChatViewModel(
                 val nonSystem = all.filter { it.role != "system" }
                 if (nonSystem.size <= 6) {
                     try {
-                        val summaryMsgs = nonSystem.map { OpenRouterClient.Message(it.role, it.content) }
-                        val summary = openRouterClient.sendSummarizeRequest(summaryMsgs, apiKey)
-                        if (!summary.isNullOrBlank()) db.chatDao().updateSessionTitle(sessionId, summary)
+                        // Only send the first 6 messages (first 3 rounds) for summarization
+                        val firstSix = nonSystem.take(6).map { OpenRouterClient.Message(it.role, it.content) }
+                        var summary: String? = null
+                        var retryPrompt: String? = null
+                        var attempts = 0
+                        while (attempts < 3) {
+                            summary = openRouterClient.sendSummarizeRequest(firstSix, apiKey, retryPrompt)
+                            if (summary.isNullOrBlank()) break
+                            if (summary.length <= 10) break
+                            // Too long: retry with stricter prompt including the previous result
+                            retryPrompt = "上一次你生成的标题是「$summary」，字数超过10字。请严格控制在10个中文字以内，只输出标题文字，不要任何解释、标点或引号。"
+                            attempts++
+                        }
+                        if (!summary.isNullOrBlank() && summary.length <= 10) {
+                            db.chatDao().updateSessionTitle(sessionId, summary)
+                        } else if (!summary.isNullOrBlank()) {
+                            // Fallback: truncate to 10 chars if still too long after retries
+                            db.chatDao().updateSessionTitle(sessionId, summary.take(10))
+                        }
                     } catch (_: Exception) { /* silent fallback */ }
                 }
             } catch (e: Exception) {
@@ -280,10 +298,19 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
     val messagesState  = viewModel.currentMessages.collectAsState(initial = emptyList())
     var textInput      by remember { mutableStateOf("") }
 
+    // Easter egg: 6 rapid taps on hamburger opens settings
+    var tapCount by remember { mutableIntStateOf(0) }
+    var lastTapTime by remember { mutableLongStateOf(0L) }
+
+    // Model dropdown
+    val modelOptions = remember { mutableListOf("deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash") }
+    var modelDropdownExpanded by remember { mutableStateOf(false) }
+
     // ─── Settings Dialog (Apple sheet style) ───────────────────────
     if (showSettings) {
         var tmpKey   by remember { mutableStateOf(apiKey) }
         var tmpModel by remember { mutableStateOf(model) }
+        var ddExpanded by remember { mutableStateOf(false) }
 
         AlertDialog(
             onDismissRequest = { showSettings = false },
@@ -304,17 +331,54 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
-                    OutlinedTextField(
-                        value = tmpModel, onValueChange = { tmpModel = it },
-                        label = { Text("\u6a21\u578b", color = AppleText3) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = AppleText1, unfocusedTextColor = AppleText2,
-                            focusedBorderColor = AppleBlue, unfocusedBorderColor = AppleDivider,
-                            cursorColor = AppleBlue
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                    // Model dropdown selector
+                    ExposedDropdownMenuBox(
+                        expanded = ddExpanded,
+                        onExpandedChange = { ddExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = when (tmpModel) {
+                                "deepseek/deepseek-v4-pro" -> "DeepSeek V4 Pro"
+                                "deepseek/deepseek-v4-flash" -> "DeepSeek V4 Flash"
+                                else -> tmpModel
+                            },
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("\u6a21\u578b", color = AppleText3) },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ddExpanded) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = AppleText1, unfocusedTextColor = AppleText2,
+                                focusedBorderColor = AppleBlue, unfocusedBorderColor = AppleDivider,
+                                focusedContainerColor = AppleSurface, unfocusedContainerColor = AppleSurface
+                            ),
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = ddExpanded,
+                            onDismissRequest = { ddExpanded = false },
+                            containerColor = AppleSurface
+                        ) {
+                            modelOptions.forEach { opt ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            when (opt) {
+                                                "deepseek/deepseek-v4-pro" -> "DeepSeek V4 Pro"
+                                                "deepseek/deepseek-v4-flash" -> "DeepSeek V4 Flash"
+                                                else -> opt
+                                            },
+                                            color = if (opt == tmpModel) AppleBlue else AppleText1
+                                        )
+                                    },
+                                    onClick = {
+                                        tmpModel = opt
+                                        ddExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -410,7 +474,21 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        IconButton(onClick = {
+                            val now = System.currentTimeMillis()
+                            if (now - lastTapTime < 1500L) {
+                                tapCount++
+                            } else {
+                                tapCount = 1
+                            }
+                            lastTapTime = now
+                            if (tapCount >= 6) {
+                                tapCount = 0
+                                showSettings = true
+                            } else {
+                                scope.launch { drawerState.open() }
+                            }
+                        }) {
                             Icon(Icons.Default.Menu, contentDescription = "Menu", tint = AppleBlue)
                         }
                     },
@@ -419,9 +497,6 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
                             IconButton(onClick = { viewModel.clearCurrentSessionMessages() }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Clear", tint = AppleText3)
                             }
-                        }
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = AppleBlue)
                         }
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
