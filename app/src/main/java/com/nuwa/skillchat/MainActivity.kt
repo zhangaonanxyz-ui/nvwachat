@@ -42,6 +42,8 @@ import com.nuwa.skillchat.network.*
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -176,7 +178,26 @@ class ChatViewModel(
             var buffer = ""
 
             try {
-                openRouterClient.sendChatRequestStream(apiMessages, apiKey, model).collect { chunk ->
+                val webSearchTools = JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("type", "function")
+                        put("function", JSONObject().apply {
+                            put("name", "web_search")
+                            put("description", "搜索互联网获取最新信息。当用户询问时事新闻、天气、股票、体育比分或其他需要实时数据的问题时使用此工具。")
+                            put("parameters", JSONObject().apply {
+                                put("type", "object")
+                                put("properties", JSONObject().apply {
+                                    put("query", JSONObject().apply {
+                                        put("type", "string")
+                                        put("description", "搜索查询关键词")
+                                    })
+                                })
+                                put("required", JSONArray().apply { put("query") })
+                            })
+                        })
+                    })
+                }
+                openRouterClient.sendChatRequestStream(apiMessages, apiKey, model, webSearchTools).collect { chunk ->
                     buffer += chunk
                     streamingMessage.value = buffer
                 }
