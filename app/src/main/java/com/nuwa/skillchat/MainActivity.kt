@@ -356,8 +356,7 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
                         )
                         ExposedDropdownMenu(
                             expanded = ddExpanded,
-                            onDismissRequest = { ddExpanded = false },
-                            containerColor = AppleSurface
+                            onDismissRequest = { ddExpanded = false }
                         ) {
                             modelOptions.forEach { opt ->
                                 DropdownMenuItem(
