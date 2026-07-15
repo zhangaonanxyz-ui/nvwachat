@@ -155,7 +155,7 @@ class ChatViewModel(
 
     fun sendMessage(text: String, apiKey: String, model: String) {
         val sessionId = currentSessionId.value ?: return
-        if (text.isBlank() || isAiResponding.value) return
+        if (text.isBlank()) return
 
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
             db.chatDao().insertMessage(
@@ -190,7 +190,7 @@ class ChatViewModel(
                 // Auto-summarize title after 3 full rounds (3 user + 3 AI = 6 non-system messages)
                 val all = db.chatDao().getMessagesForSession(sessionId).first()
                 val nonSystem = all.filter { it.role != "system" }
-                if (nonSystem.size <= 6) {
+                if (nonSystem.size >= 6) {
                     try {
                         // Only send the first 6 messages (first 3 rounds) for summarization
                         val firstSix = nonSystem.take(6).map { OpenRouterClient.Message(it.role, it.content) }
@@ -586,7 +586,7 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
                                     viewModel.sendMessage(textInput, apiKey, model)
                                     textInput = ""
                                 },
-                                enabled = !viewModel.isAiResponding.value && textInput.isNotBlank(),
+                                enabled = textInput.isNotBlank(),
                                 shape = CircleShape,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = AppleBlue,
@@ -596,7 +596,7 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
                                 contentPadding = PaddingValues(0.dp)
                             ) {
                                 Icon(Icons.Default.Send, contentDescription = "Send",
-                                    tint = if (viewModel.isAiResponding.value || textInput.isBlank()) AppleText3 else Color.White,
+                                    tint = if (textInput.isBlank()) AppleText3 else Color.White,
                                     modifier = Modifier.size(18.dp))
                             }
                         }
