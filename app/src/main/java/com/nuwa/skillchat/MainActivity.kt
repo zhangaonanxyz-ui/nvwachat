@@ -23,6 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -298,10 +299,6 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
     val messagesState  = viewModel.currentMessages.collectAsState(initial = emptyList())
     var textInput      by remember { mutableStateOf("") }
 
-    // Easter egg: 6 rapid taps on hamburger opens settings
-    var tapCount by remember { mutableIntStateOf(0) }
-    var lastTapTime by remember { mutableLongStateOf(0L) }
-
     // Model dropdown
     val modelOptions = remember { mutableListOf("deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash") }
     var modelDropdownExpanded by remember { mutableStateOf(false) }
@@ -473,21 +470,17 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = {
-                            val now = System.currentTimeMillis()
-                            if (now - lastTapTime < 1500L) {
-                                tapCount++
-                            } else {
-                                tapCount = 1
-                            }
-                            lastTapTime = now
-                            if (tapCount >= 6) {
-                                tapCount = 0
-                                showSettings = true
-                            } else {
-                                scope.launch { drawerState.open() }
-                            }
-                        }) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onTap = { scope.launch { drawerState.open() } },
+                                        onLongPress = { showSettings = true }
+                                    )
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(Icons.Default.Menu, contentDescription = "Menu", tint = AppleBlue)
                         }
                     },
