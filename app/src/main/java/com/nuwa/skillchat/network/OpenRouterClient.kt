@@ -95,4 +95,57 @@ class OpenRouterClient {
             emit("Network Error: ${e.localizedMessage}")
         }
     }.flowOn(Dispatchers.IO)
+
+    /**
+     * Non-streaming request for session title summarization using deepseek-v4-flash.
+     */
+    suspend fun sendSummarizeRequest(messages: List<Message>, apiKey: String): String? {
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            try {
+                val requestBodyJson = JSONObject().apply {
+                    put("model", "deepseek/deepseek-v4-flash")
+                    put("stream", false)
+
+                    val messagesArray = JSONArray()
+                    messagesArray.put(JSONObject().apply {
+                        put("role", "system")
+                        put("content", "请用8-15个中文字总结以下对话的主题，只输出主题文字，不加任何标点或解释。")
+                    })
+                    messages.forEach { msg ->
+                        messagesArray.put(JSONObject().apply {
+                            put("role", msg.role)
+                            put("content", msg.content)
+                        })
+                    }
+                    put("messages", messagesArray)
+                }
+
+                val authHeader = if (apiKey.trim().startsWith("Bearer ")) apiKey.trim() else "Bearer ${apiKey.trim()}"
+
+                val request = Request.Builder()
+                    .url(apiEndpoint)
+                    .addHeader("Authorization", authHeader)
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("HTTP-Referer", "https://github.com/alchaincyf/nuwa-skill")
+                    .addHeader("X-Title", "Nuwa Mobile Skill Chat")
+                    .post(requestBodyJson.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext null
+                    val bodyString = response.body?.string() ?: return@withContext null
+                    val json = JSONObject(bodyString)
+                    val choices = json.getJSONArray("choices")
+                    if (choices.length() > 0) {
+                        val message = choices.getJSONObject(0).getJSONObject("message")
+                        return@withContext message.getString("content").trim()
+                    }
+                    null
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+    }
 }
