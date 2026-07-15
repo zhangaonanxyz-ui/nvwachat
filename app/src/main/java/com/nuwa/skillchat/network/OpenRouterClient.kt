@@ -99,7 +99,7 @@ class OpenRouterClient {
     /**
      * Non-streaming request for session title summarization using deepseek-v4-flash.
      */
-    suspend fun sendSummarizeRequest(messages: List<Message>, apiKey: String): String? {
+    suspend fun sendSummarizeRequest(messages: List<Message>, apiKey: String, prompt: String? = null): String? {
         return kotlinx.coroutines.withContext(Dispatchers.IO) {
             try {
                 val requestBodyJson = JSONObject().apply {
@@ -107,9 +107,10 @@ class OpenRouterClient {
                     put("stream", false)
 
                     val messagesArray = JSONArray()
+                    val systemPrompt = prompt ?: "请用8-15个中文字总结以下对话的主题，只输出主题文字，不加任何标点或解释。"
                     messagesArray.put(JSONObject().apply {
                         put("role", "system")
-                        put("content", "请用8-15个中文字总结以下对话的主题，只输出主题文字，不加任何标点或解释。")
+                        put("content", systemPrompt)
                     })
                     messages.forEach { msg ->
                         messagesArray.put(JSONObject().apply {
