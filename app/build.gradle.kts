@@ -89,10 +89,8 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
 
-    // Markwon (Markdown + LaTeX rendering)
+    // Markwon (Markdown rendering)
     implementation("io.noties.markwon:core:4.6.2")
     implementation("io.noties.markwon:ext-strikethrough:4.6.2")
     implementation("io.noties.markwon:ext-tables:4.6.2")
-    implementation("io.noties.markwon:ext-latex:4.6.2")
-    implementation("io.noties:jlatexmath-android:0.2.0")
 }

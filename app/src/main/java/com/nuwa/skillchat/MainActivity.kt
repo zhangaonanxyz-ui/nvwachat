@@ -35,7 +35,6 @@ import kotlinx.coroutines.Dispatchers
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
-import io.noties.markwon.ext.latex.JLatexMathPlugin
 
 class MainActivity : ComponentActivity() {
     private lateinit var db: AppDatabase
@@ -507,13 +506,10 @@ fun MarkdownContent(content: String, textColor: Color, modifier: Modifier = Modi
                 val markwon = Markwon.builder(context)
                     .usePlugin(StrikethroughPlugin.create())
                     .usePlugin(TablePlugin.create(context))
-                    .usePlugin(JLatexMathPlugin.create(textView.textSize) { builder ->
-                        builder.inlinesEnabled(true)
-                    })
                     .build()
                 markwon.setMarkdown(textView, content)
             } catch (e: Exception) {
-                // Fallback: if Markwon/LaTeX fails, show plain text
+                // Fallback: if Markwon fails, show plain text
                 textView.text = content
             }
         }
