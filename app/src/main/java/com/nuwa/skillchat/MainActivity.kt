@@ -40,7 +40,6 @@ import com.nuwa.skillchat.network.*
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
-import io.noties.markwon.ext.tables.TableTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -351,7 +350,7 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
                     Spacer(Modifier.height(2.dp))
                     Text("Skill \u667a\u80fd\u5bf9\u8bdd", fontSize = 13.sp, color = AppleText3)
                 }
-                HorizontalDivider(color = AppleDivider)
+                Divider(color = AppleDivider)
 
                 // Sessions
                 Text("\u5386\u53f2\u5bf9\u8bdd", fontSize = 12.sp, fontWeight = FontWeight.Medium,
@@ -377,7 +376,7 @@ fun ChatAppScreen(viewModel: ChatViewModel) {
                     }
                 }
 
-                HorizontalDivider(color = AppleDivider)
+                Divider(color = AppleDivider)
 
                 // Skills
                 Text("\u9009\u62e9 Skill", fontSize = 12.sp, fontWeight = FontWeight.Medium,
@@ -621,15 +620,9 @@ fun MarkdownContent(content: String, textColor: Color, modifier: Modifier = Modi
         update = { textView ->
             textView.setTextColor(textColor.toArgb())
             try {
-                // Dark-themed table style
-                val tableTheme = TableTheme.Builder()
-                    .textColor(AppleText2.toArgb())
-                    .borderColor(AppleDivider.toArgb())
-                    .build()
-
                 val markwon = Markwon.builder(context)
                     .usePlugin(StrikethroughPlugin.create())
-                    .usePlugin(TablePlugin.create(context, tableTheme))
+                    .usePlugin(TablePlugin.create(context))
                     .build()
                 markwon.setMarkdown(textView, content)
             } catch (e: Exception) {
